@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+
+from argparse import ArgumentParser
+import logging
+from os import makedirs, path, system as shell
+
+
+logging.basicConfig(level=logging.INFO)
+
+cmd = ArgumentParser(
+    description="Help create ssl key (stored to predefined directories).",
+)
+cmd.add_argument(
+    'command',
+    help="what to do",
+    choices=['create', 'info', 'verify'],
+)
+cmd.add_argument(
+    '--type',
+    help="ssl-key type",
+    choices=['key', 'csr', 'pem', 'der'],
+)
+cmd.add_argument(
+    '--key',
+    help="ssl private key base filename",
+)
+cmd.add_argument(
+    '--name',
+    help="ssl-key base filename"
+)
+cmd.add_argument(
+    '--expire',
+    help="ssl-key expiration time since now (in days)",
+    type=int,
+    default=0,
+)
+cmd_args = cmd.parse_args()
+
+if cmd_args.type == 'key' and cmd_args.command == 'create':
+    if not path.exists(path.join('/etc', 'ssl', 'private')):
+        makedirs(path.join('/etc', 'ssl', 'private'))
+    shell("openssl genrsa -out %s.key 4096" % path.join(
+        '/etc', 'ssl', 'private', cmd_args.name,
+    ))
+elif cmd_args.type == 'csr' and cmd_args.command == 'create':
+    if not path.exists(path.join('/etc', 'ssl', 'csr')):
+        makedirs(path.join('/etc', 'ssl', 'csr'))
+    shell("openssl req -new -key %s.key -out %s.csr" % (
+        path.join('/etc', 'ssl', 'private', cmd_args.key),
+        path.join('/etc', 'ssl', 'csr', cmd_args.name),
+    ))
+elif cmd_args.type == 'csr' and cmd_args.command == 'info':
+    logging.info("view the contents of '%s.csr'" % cmd_args.name)
+    shell("openssl req -noout -text -in %s.csr" % path.join(
+        '/etc', 'ssl', 'csr', cmd_args.name,
+    ))
+elif cmd_args.type == 'pem' and cmd_args.command == 'create':
+    if not path.exists(path.join('/etc', 'ssl', 'certs')):
+        makedirs(path.join('/etc', 'ssl', 'certs'))
+    scmd = "openssl x509 -req -signkey %s.key -in %s.csr -out %s.pem" % (
+        path.join('/etc', 'ssl', 'private', cmd_args.key),
+        path.join('/etc', 'ssl', 'csr', cmd_args.name),
+        path.join('/etc', 'ssl', 'certs', cmd_args.name),
+    )
+    if cmd_args.expire > 0:
+        scmd += ' -days %' % cmd_args.expire
+    shell(scmd)
+elif cmd_args.type == 'pem' and cmd_args.command == 'info':
+    logging.info("view the contents of '%s.pem'" % cmd_args.name)
+    shell("openssl x509 -noout -text -in %s.pem" % path.join(
+        '/etc', 'ssl', 'certs', cmd_args.name,
+    ))
+    logging.info("view the MD5 fingerprint of '%s.pem'" % cmd_args.name)
+    shell("openssl x509 -fingerprint -noout -in %s.pem" % path.join(
+        '/etc', 'ssl', 'certs', cmd_args.name,
+    ))
+elif cmd_args.type == 'pem' and cmd_args.command == 'verify':
+    logging.info("MD5 of '%s.key':" % cmd_args.key)
+    shell("openssl rsa -noout -modulus -in %s.key | openssl md5" %  path.join(
+        '/etc', 'ssl', 'private', cmd_args.key,
+    ))
+    logging.info("MD5 of '%s.csr':" % cmd_args.name)
+    shell("openssl req -noout -modulus -in %s.csr | openssl md5" % path.join(
+        '/etc', 'ssl', 'csr', cmd_args.name,
+    ))
+    logging.info("MD5 of '%s.pem':" % cmd_args.name)
+    shell("openssl x509 -noout -modulus -in %s.pem | openssl md5" % path.join(
+        '/etc', 'ssl', 'certs', cmd_args.name,
+    ))
+else:
+    logging.warning("command '%s' for type '%s' was ignored." % (
+        cmd_args.command,
+        cmd_args.type,
+    ))
